@@ -1,5 +1,5 @@
 ---
-title: OpenSandbox分析
+title: OpenSandbox介绍
 slug: opensandbox
 description: OpenSandbox 是一个面向 AI 应用的通用沙箱平台。它提供客户端 SDK 与工具、协议定义、生命周期控制平面、Docker 和 Kubernetes 运行时后端（同时支持容器工作负载和基于模板的 microVM），以及沙箱内的执行…
 category: opensandbox
@@ -8,7 +8,7 @@ lang: zh
 draft: false
 ---
 
-# OpenSandbox分析
+# OpenSandbox介绍
 
 OpenSandbox 是一个面向 AI 应用的通用沙箱平台。它提供客户端 SDK 与工具、协议定义、生命周期控制平面、Docker 和 Kubernetes 运行时后端（同时支持容器工作负载和基于模板的 microVM），以及沙箱内的执行组件，用于命令、文件、代码解释器、浏览器自动化、桌面环境和训练工作负载。
 
@@ -250,57 +250,38 @@ pool 维护一个**两级容量模型**：
 
 **耗尽。** 当没有符合条件的 pool 有空闲 slot 时，controller 会在等待中的 `BatchSandbox` 上设置 `PoolAllocationPending` condition（reason 为 `PoolCapacityExhausted`），并每 5 秒重新检查一次；server 会等待一个有界窗口，如果容量始终未释放，则返回可重试的 `429`。在该窗口内释放的 slot 仍可满足请求。
 
-##### Pool 上的 Lifecycle-API 约束
 
-由于 pool pod 在任何请求之前就已存在，lifecycle API 无法向其中注入 per-request 状态：
 
-- `entrypoint` / `env` 作为分配后的任务投递，而不是通过重写 pod——在 pod spec 中看到原始模板是符合预期的。
-- `volumes` 和 `networkPolicy` 不能与 pool 引用同时使用；请预先在 pool 模板中配置它们。
-- 若要供 lifecycle API 使用，pool pod 必须满足任务契约（pod 内 task executor、bootstrap entrypoint、已安装 execd）。
+#### SandboxSnapshot
 
-## 任务编排
+<font color=green>`SandboxSnapshot` 是 pause/resume 背后的 checkpoint 记录。</font>它的 spec 只有一个字段——目标 `BatchSandbox` 名称（同一 namespace）；controller 会解析出 pod 和节点。Registry、push 凭证和快照类型来自 controller 启动参数，而不是 spec。Status 承载结果：`Pending → Committing → Succeed / Failed` 的 phase、`rootfs-v1`（默认）或 `qemu-v1` 的 `format`、每个容器提交后的镜像 URI 及其不可变 config digest、源 pod 和节点，以及——对于 QEMU 契约——一个单独的 VM-state 镜像，包含 payload digest 和 restore 兼容性摘要。
 
-任务是可选的：没有 `taskTemplate` 的 `BatchSandbox` 只做纯分配。有了它，每个 replica 会运行一个指定的进程——在整个 batch 中一致，或通过 shard patch 为每个沙箱定制。
+==暂停会持久化 rootfs，将其推送到配置的 registry，并释放 pod 和 pool slot；恢复会使用快照镜像以相同的 sandbox ID 重新创建工作负载==。pause/resume 仅限于单 replica 沙箱（`spec.replicas=1`）。在 pause 期间，controller 管理一个以沙箱命名的内部快照；commit 作为 job 在源节点上运行。Registry 凭证、保留策略和容量规划属于 operator 的职责——删除快照记录并不会删除已推送的镜像。
 
-进程任务可以以 **Local**（在 task-executor 容器内，默认）或 **Remote**（通过 `nsenter` 在主容器内）方式运行，通过 `execMode` 按任务选择。进程任务还支持 `preStart` 和 `postStop` 生命周期钩子：失败或超时的 `preStart` 会阻止主进程启动，而 `postStop` 会在每一种终态结果下运行，包括删除——适合暂存输入并将输出持久化到挂载的卷中。
+![pause/resume 阶段](../assets/opensandbox/operator-pause-phases.svg)
 
-API 删除和 TTL 过期会在删除或回收 pod 之前完成任务清理（包括 `postStop`）。直接前台删除 BatchSandbox，或删除其 Pool 或 pod，可能绕过这一顺序。
+设置 `--snapshot-image-uri-template`（Helm：`controller.snapshot.imageURITemplate`）可在首次推送前自定义快照镜像名称。空 template 保留默认命名规则；有关命名字段和日期/时区格式化辅助函数。
 
-任务调度器通过 name、UID 和 IP 将每个任务绑定到 Pod 实例。一旦 controller 观察到绑定的 Pod 正在终止、缺失，或身份或 IP 发生变化，调度器就会停止向该端点查询和发送任务，包括 stop 请求。在任务分配和恢复期间，它也会跳过正在终止的 Pod。绑定消失的任务会被标记为 failed 并在本地释放，已完成的任务会保留其记录的结果。已经在途的请求仍可能到达该端点。
+## Lifecycle Server
 
-## SandboxSnapshot
+Lifecycle server 是 OpenSandbox 部署的控制面：一个带认证的 HTTP API，所有 SDK、CLI 和 MCP 客户端都与之通信，无论沙箱由什么运行时承载。它负责生命周期编排——校验请求、执行访问控制、持久化 server 管理的记录——并将实际的沙箱工作委托给配置好的运行时后端（Docker、Kubernetes 或 Fast Sandbox 集成）。
 
-`SandboxSnapshot` 是 pause/resume 背后的 checkpoint 记录。它的 spec 只有一个字段——目标 `BatchSandbox` 名称（同一 namespace）；controller 会解析出 pod 和节点。Registry、push 凭证和快照类型来自 controller 启动参数，而不是 spec。Status 承载结果：`Pending → Committing → Succeed / Failed` 的 phase、`rootfs-v1`（默认）或 `qemu-v1` 的 `format`、每个容器提交后的镜像 URI 及其不可变 config digest、源 pod 和节点，以及——对于 QEMU 契约——一个单独的 VM-state 镜像，包含 payload digest 和 restore 兼容性摘要。参见 [QEMU VMState 快照](/guides/qemu-vmstate-snapshots)。
+![沙箱生命周期状态](../assets/opensandbox/server-lifecycle.svg)
 
-暂停会持久化 rootfs，将其推送到配置的 registry，并释放 pod 和 pool slot；恢复会使用快照镜像以相同的 sandbox ID 重新创建工作负载。pause/resume 仅限于单 replica 沙箱（`spec.replicas=1`）。在 pause 期间，controller 管理一个以沙箱命名的内部快照；commit 作为 job 在源节点上运行。Registry 凭证、保留策略和容量规划属于 operator 的职责——删除快照记录并不会删除已推送的镜像。
+### lifecycle server架构
 
-![pause/resume 阶段](../../public/images/operator-pause-phases.svg)
+![Server 内部架构](../assets/opensandbox/server-architecture.svg)
 
-设置 `--snapshot-image-uri-template`（Helm：`controller.snapshot.imageURITemplate`）可在首次推送前自定义快照镜像名称。空 template 保留默认命名规则；有关命名字段和日期/时区格式化辅助函数，参见[自定义镜像名称](/guides/pause-resume#custom-image-names)。
+server 是一个 FastAPI 应用，按层组织，每一层都可以在接口之后被替换：
 
-## 读取 status
+- **API 层**（`api/`）——薄 HTTP 路由（生命周期、代理、pool、模板、网络策略、诊断、指标）及其请求/响应 schema。所有校验都在这里完成。
+- **中间件**（`middleware/`）——横切关注点：认证、request ID、日期 header、HTTP 指标、CORS。
+- **服务层**（`services/`）——生命周期状态机和运行时集成，见下文。
+- **仓储层**（`repositories/`）——仅用于 server 管理记录的持久化。
+- **租户层**（`tenants/`）——可插拔身份 provider，从请求的 API key 解析租户。
+- **集成层**（`integrations/`）——可选附加组件，例如访问时续期消费者和 OpenTelemetry 指标。
 
-phase 报告沙箱运行时健康状态；conditions 解释其原因。两者都是 Kubernetes 原生的，可用普通 `kubectl` 检查。
+两条规则定义了分层，二者都是为了保持控制面职责清晰且可替换：
 
-| Phase | 含义 |
-|---|---|
-| `Pending` | 尚未观察到正在运行且 ready 的沙箱 pod |
-| `Succeed` | 至少有一个沙箱 pod 正在运行且 ready——这是稳态，**不是**任务完成 |
-| `Pausing` / `Paused` / `Resuming` | pause/resume 转换中 |
-| `Failed` | 终态运行时失败——请检查 conditions 和 pod 事件 |
-| `Completed` | 终态：主容器在不会将其拉起的 restart policy 下退出 0（`Never`，或仅对非零退出重启的 `OnFailure`）。`Ready` condition 携带 pod、退出码和完成时间；pod 和 CRD 会保留到 `expireTime`，pause/resume 被拒绝，任务调度停止 |
-
-Conditions（`Ready`、`Progressing`、`Paused`、`PauseFailed`、`ResumeFailed`、`PodFailed`、`PoolAllocationPending`）带有 reason 和 message；只有当某个 condition 存在且 status 为 `True` 时才计入，并且在信任更新后的 status 之前，请将 `status.observedGeneration` 与 `metadata.generation` 进行比对。
-
-## 性能
-
-启用 pooling 后，实测 100 个沙箱的交付：
-
-| 场景 | 总耗时 |
-|---|---|
-| SIG Agent-Sandbox（并发 1 / 10 / 50） | 76.4 s / 23.2 s / 33.9 s |
-| BatchSandbox | 0.92 s |
-
-## 安装
-
-通过 base 和 controller Helm charts 安装 CRD 和 controller（开发时可用 Kustomize）；[Kubernetes 部署](/deployment/)页面会介绍完整技术栈，[controller 源码](https://github.com/opensandbox-group/OpenSandbox/tree/main/kubernetes)记录 chart values 和本地构建方式。
+1. **API 从不直接与运行时通信。** 一切都要经过服务接口，因此后端细节不会越过边界泄漏——这也是 API 层能保持很薄、运行时能仅靠配置就完成替换的原因。
+2. **沙箱不是 server 数据库里的行。** Docker 容器、Kubernetes 资源或 fast-sandbox CR 才是 source of truth。server 只持久化它拥有的内容（快照元数据和模板目录），这正是存储后端可替换、故障转移可处理的前提。
