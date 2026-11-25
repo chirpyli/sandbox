@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="%%DESCRIPTION%%">
+  <title>%%TITLE%% · %%SITE_TITLE%%</title>
+  <link rel="icon" type="image/svg+xml" href="%%PREFIX%%assets/favicon.svg">
+  <link rel="stylesheet" href="%%PREFIX%%assets/style.css">
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="%%PREFIX%%"><span class="brand-mark" aria-hidden="true"></span>%%SITE_TITLE%%</a>
+      <nav aria-label="主导航">
+        <a href="%%PREFIX%%#categories">文档分类</a>
+        <a href="%%REPO_URL%%" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap article-page">
+    <article class="article">
+      <header class="article-header">
+        <p class="eyebrow">%%CATEGORY%% · %%LANG%%</p>
+        <h1>%%TITLE%%</h1>
+        <p class="article-desc">%%DESCRIPTION%%</p>
+        <div class="article-tags">%%TAGS%%</div>
+      </header>
+
+      <details class="page-toc">
+        <summary>目录</summary>
+        %%TOC%%
+      </details>
+
+      <div class="article-body">%%BODY%%</div>
+    </article>
+
+    <nav class="page-nav" aria-label="上下篇导航">
+      %%PREV%%
+      %%NEXT%%
+    </nav>
+
+    <p class="back-home"><a href="%%PREFIX%%#categories">← 返回文档列表</a></p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>© %%YEAR%% AI 智能体沙箱</span>
+      <span>Built with GitHub Pages</span>
+    </div>
+  </footer>
+</body>
+</html>

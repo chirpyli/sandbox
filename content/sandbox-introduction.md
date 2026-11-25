@@ -1,9 +1,11 @@
 ---
-title: "沙箱介绍"
+title: 沙箱介绍
 slug: sandbox-introduction
-description: "沙箱介绍"
+description: 对比 agent-sandbox、CubeSandbox 与 Substrate 等设计路线，整理主流开源沙箱运行时。
+category: overview
+order: 100
 lang: zh
-draft: true
+draft: false
 ---
 
 # 沙箱介绍

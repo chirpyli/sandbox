@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI 智能体沙箱知识库：沙箱编排、运行时隔离、Kata Containers 与虚拟化技术文档。">
+  <title>%%SITE_TITLE%% · 知识库</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>%%SITE_TITLE%%</a>
+      <nav aria-label="主导航">
+        <a href="#categories">文档分类</a>
+        <a href="%%REPO_URL%%" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="eyebrow">AI AGENT SANDBOX · KNOWLEDGE BASE</p>
+        <h1>%%SITE_TITLE%%</h1>
+        <p class="lead">从编排层到运行时，系统整理 AI 智能体执行环境的架构设计、隔离机制与工程实践。</p>
+        <div class="hero-meta">
+          <span><strong>%%ARTICLE_COUNT%%</strong> 篇文档</span>
+          <span class="dot" aria-hidden="true"></span>
+          <span><strong>%%CATEGORY_COUNT%%</strong> 个专题</span>
+          <a class="btn btn-primary" href="#categories">浏览文档</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="wrap" id="categories">
+      %%SECTIONS%%
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>© %%YEAR%% AI 智能体沙箱</span>
+      <span>Built with GitHub Pages</span>
+    </div>
+  </footer>
+</body>
+</html>

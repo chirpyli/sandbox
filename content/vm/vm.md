@@ -1,5 +1,11 @@
 ---
-
+title: 虚拟化
+slug: vm
+description: 解析内存虚拟化中的地址转换链路，以及 Dragonball 与 Kata 的内存分配方式。
+category: vm
+order: 100
+lang: zh
+draft: false
 ---
 
 ### 虚拟化

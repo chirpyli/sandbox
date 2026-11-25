@@ -1,3 +1,13 @@
+---
+title: Kata介绍
+slug: kata
+description: 介绍 Kata Containers 如何用轻量虚拟机提供容器体验与虚拟机级隔离。
+category: kata
+order: 100
+lang: zh
+draft: false
+---
+
 ## Kata介绍
 
 Kata Containers致力于构建一种安全的**容器运行时**。
