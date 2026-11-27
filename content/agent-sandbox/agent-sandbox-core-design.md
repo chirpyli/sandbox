@@ -4,7 +4,6 @@ slug: agent-sandbox-core-design
 description: 解析沙箱抽象、调度、访问与隔离机制，以及 SandboxTemplate 和 SandboxWarmPool 的核心路径。
 category: agent-sandbox
 order: 30
-lang: zh
 draft: false
 ---
 

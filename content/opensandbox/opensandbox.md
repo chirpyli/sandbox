@@ -4,7 +4,6 @@ slug: opensandbox
 description: OpenSandbox 是一个面向 AI 应用的通用沙箱平台。它提供客户端 SDK 与工具、协议定义、生命周期控制平面、Docker 和 Kubernetes 运行时后端（同时支持容器工作负载和基于模板的 microVM），以及沙箱内的执行…
 category: opensandbox
 order: 100
-lang: zh
 draft: false
 ---
 
@@ -178,89 +177,7 @@ BatchSandbox 同时支持基于模板的创建和通过 `extensions.poolRef` 的
 该 controller 是支撑容器沙箱的 Kubernetes operator。它持续 watch 三个自定义资源，并将它们转化为运行中的沙箱，具备 pod 级调度、用于恒定时间交付的预热池、可选的任务编排以及基于快照的 pause/resume。生命周期 server 代表 API 客户端创建和管理这些资源，但这些资源是普通的 Kubernetes 对象——可见、可审计，并且可以直接使用。
 ![image](../assets/opensandbox/operator-model.svg)
 
-#### 顶层设计
-controller manager 运行三个 reconciler，每个自定义资源对应一个。它们都遵循标准的 Kubernetes 模式：watch 期望状态，将其与观察到的 pod 做 diff，并通过幂等操作收敛。
 
-![Controller reconcilers](../assets/opensandbox/operator-reconcilers.svg)
-
-- **BatchSandboxReconciler** — 负责 sandbox pod：在直接（非池化）模式下扩缩容、解析 pool 分配、调度任务、强制 `expireTime`，并驱动 pause/resume 交接（`internal/controller/batchsandbox_controller.go`）。
-- **PoolReconciler** — 负责 pool pod 并 watch `BatchSandbox` 对象：将预热 pod 调度给等待中的沙箱、扩缩 buffer、滚动更新模板，并处理驱逐（`internal/controller/pool_controller.go`）。
-- **SandboxSnapshot reconciler** — 将 `SandboxSnapshot` 转换为在源节点上运行的 commit `Job`，并记录推送的镜像结果（`internal/controller/sandboxsnapshot_controller.go`）。
-
-两个契约将这些 reconciler 连接起来而不产生耦合：
-
-- **分配 annotation。** pool reconciler 在 `BatchSandbox` 上写入 `sandbox.opensandbox.io/alloc-status`（已分配的 pod、`poolRef`、generation）和 `alloc-release`；`endpoints` annotation 携带供 server 端消费的已解析端点。Pod 带有 `sandbox.opensandbox.io/pool-name` 和 `pool-revision` label。
-- **任务分发。** batch reconciler 运行进程内的 `TaskScheduler`，将任务分配给 pod，并调用运行在每个沙箱 pod 内的 task-executor HTTP server。
-
-
-#### BatchSandbox
-
-==`BatchSandbox`是核心：以声明方式描述一个或多个完全相同的沙箱。==
-
-| Spec 字段 | 含义 |
-|---|---|
-| `replicas` | 沙箱数量（默认 1） |
-| ==template== | 每个 replica 启动所依据的 pod 模板 |
-| ==poolRef== | 从指定的 `Pool` 分配，而不是调度新的 pod；与 `template` 互斥 |
-| `shardPatches` | 在 `template` 之上应用的 per-replica patch——某个 replica 可以在镜像、env 或资源上有所不同 |
-| `taskTemplate` | 可选；每个 replica 在分配后运行的进程，由 pod 内的 task executor 执行 |
-| `shardTaskPatches` | `taskTemplate` 的 per-replica 变体——在同一 batch 中实现异构任务 |
-| `taskResourcePolicyWhenCompleted` | 任务达到 Succeeded/Failed 时沙箱资源的处理方式：`Retain`（默认）保留直到删除，`Release` 立即释放 |
-| ==expireTime== | controller 开始删除的绝对过期时间|
-| `pause` | ==pause/resume 意图==：`true` 暂停，`false` 恢复。controller 从不清除该字段；它通过 `status.pauseObservedGeneration` 确认进度，该字段也用于控制重入 |
-
-如果 `poolRef` 为空，controller 仍可通过可配置的 profile 自动选择 pool：predicate 插件（capacity、image、resource、node selector）过滤候选，然后由 scoring 插件（默认 least-allocated）选出其中一个（`internal/controller/poolassign/`）。
-
-Status 将沙箱健康与任务进度分开：`replicas` / `allocated` / `ready` 和 `phase` / `conditions` 描述运行时；`taskRunning` / `taskSucceed` / `taskFailed` / `taskPending` / `taskUnknown` 计数器以及 `taskLastErrorMessage` 描述任务。
-
-#### Pool
-
-<font color=green>`Pool` 持有预热 pod，使分配变成对现有容量的认领，而不是一次调度往返。</font>
-
-| Spec 字段 | 含义 |
-|---|---|
-| `template` | 预热 pod 启动所依据的 pod 模板 |
-| `capacitySpec` | `bufferMin`/`bufferMax` 控制 ready 区间；`poolMin`/`poolMax` 限定整个 pool |
-| `scaleStrategy` | `maxUnavailable` 限制 pool 扩缩容速度（绝对值或百分比，默认 25%） |
-| `updateStrategy` | 对现有 pod 滚动更新模板时采用相同的上限 |
-| `recycleStrategy` | 已分配的 pod 被归还时的处理方式：`Delete`（默认）、`Restart` 或 `Noop` |
-
-Status 报告 `total` / `allocated` / `available` / `updated`，以及标识当前模板版本的 `revision`——模板的 SHA-256 哈希（前 8 字节）。`total` 统计 pool 所负责的 pod：未终止的 pod，加上仍分配给沙箱的 pod（它们在交还前始终计入），包括处于 terminal 阶段的 pod 和已经在终止中的 pod，因此 `allocated / total` 始终是一个利用率分数。空闲的 terminal pod 不计入 `total` 和 `updated`；正在终止但已分配的 pod 在其 reservation 交还前仍计入 `total`，但不再计入 `updated`；任何 terminal pod 都不会计入 `available`，因为它再也无法提供服务——否则一个 buffer 已全部失效的 pool 看起来仍然健康。尚未回收的 terminal pod 仍会在 controller 回收它们之前占用 `poolMax` 预算中的槽位。
-
-##### Pool设计
-
-pool 维护一个**两级容量模型**：
-
-![Pool 容量模型](../assets/opensandbox/operator-pool-capacity.svg)
-
-- **Buffer** — 预热、未分配且处于 Running 和 Ready 状态的 pod。分配正是从此处取用，其数量保持在 `bufferMin` 与 `bufferMax` 之间。controller 持续向该区间收敛：分配耗尽 buffer 会触发 scale-up；释放后超出 `bufferMax` 的容量会触发 scale-down。
-- **Total pool** — pool 拥有且仍能提供服务或仍对沙箱负有义务的所有内容，无论是否已分配，受 `poolMin` 和 `poolMax` 限制。仍在启动中的 pod 会计入 total，但绝不会作为可用 buffer 对外通告，因此 pool 永远不会承诺无法交付的容量。Terminal pod（Failed 或 Succeeded）仅在仍分配给沙箱时计入；空闲的 terminal pod 不计入报告的 total。尚未回收的 terminal pod 仍占用 `poolMax` 预算，因此一个存在未回收 terminal pod 的 pool 可能报告 `total` 低于 `poolMax`，同时却不再创建替代 pod。
-
-==扩容节奏是刻意设定的：每次 reconcile 最多创建或删除 `maxUnavailable` 个 pod（扣除已经 not-ready 的部分），因此突发分配只会带来平稳的新 pod 增长，而不是 thundering herd。==
-
-**分配与归还。** 分配是对预热 pod 的恒定时间认领：pool reconciler 将 pod 调度给等待中的沙箱，然后通过分配 annotation 持久化该指派。当使用某个 pod 的沙箱消失时，pod 归还给 pool，由 `recycleStrategy` 决定其命运：
-
-- `Delete`（默认）——归还的 pod 会被一个全新的 pod 替换，因此每次分配都从模板的干净状态开始。
-- `Restart`——容器原地重启：比完整 pod churn 更廉价，仍能清除进程状态。
-- `Noop`——原样归还：最快，但文件系统和进程状态会泄漏到下一次分配。
-
-**模板更新。** 编辑 pool 模板会改变 revision；controller 会删除仍使用旧 revision 的空闲 pod（绝不删除已分配给沙箱的 pod），并在 `updateStrategy` 上限内按新 revision 补足，`status.updated` 用于跟踪进度。
-
-**驱逐。** 给空闲的 pool pod 打上 `pool.opensandbox.io/evict` label 即请求移除它。controller 会保护已分配给 `BatchSandbox` 的 pod，删除空闲 pod，并让补足机制恢复 buffer。
-
-**耗尽。** 当没有符合条件的 pool 有空闲 slot 时，controller 会在等待中的 `BatchSandbox` 上设置 `PoolAllocationPending` condition（reason 为 `PoolCapacityExhausted`），并每 5 秒重新检查一次；server 会等待一个有界窗口，如果容量始终未释放，则返回可重试的 `429`。在该窗口内释放的 slot 仍可满足请求。
-
-
-
-#### SandboxSnapshot
-
-<font color=green>`SandboxSnapshot` 是 pause/resume 背后的 checkpoint 记录。</font>它的 spec 只有一个字段——目标 `BatchSandbox` 名称（同一 namespace）；controller 会解析出 pod 和节点。Registry、push 凭证和快照类型来自 controller 启动参数，而不是 spec。Status 承载结果：`Pending → Committing → Succeed / Failed` 的 phase、`rootfs-v1`（默认）或 `qemu-v1` 的 `format`、每个容器提交后的镜像 URI 及其不可变 config digest、源 pod 和节点，以及——对于 QEMU 契约——一个单独的 VM-state 镜像，包含 payload digest 和 restore 兼容性摘要。
-
-==暂停会持久化 rootfs，将其推送到配置的 registry，并释放 pod 和 pool slot；恢复会使用快照镜像以相同的 sandbox ID 重新创建工作负载==。pause/resume 仅限于单 replica 沙箱（`spec.replicas=1`）。在 pause 期间，controller 管理一个以沙箱命名的内部快照；commit 作为 job 在源节点上运行。Registry 凭证、保留策略和容量规划属于 operator 的职责——删除快照记录并不会删除已推送的镜像。
-
-![pause/resume 阶段](../assets/opensandbox/operator-pause-phases.svg)
-
-设置 `--snapshot-image-uri-template`（Helm：`controller.snapshot.imageURITemplate`）可在首次推送前自定义快照镜像名称。空 template 保留默认命名规则；有关命名字段和日期/时区格式化辅助函数。
 
 ## Lifecycle Server
 
@@ -285,3 +202,24 @@ server 是一个 FastAPI 应用，按层组织，每一层都可以在接口之�
 
 1. **API 从不直接与运行时通信。** 一切都要经过服务接口，因此后端细节不会越过边界泄漏——这也是 API 层能保持很薄、运行时能仅靠配置就完成替换的原因。
 2. **沙箱不是 server 数据库里的行。** Docker 容器、Kubernetes 资源或 fast-sandbox CR 才是 source of truth。server 只持久化它拥有的内容（快照元数据和模板目录），这正是存储后端可替换、故障转移可处理的前提。
+
+### 设计决策
+#### 一个契约，多个可插拔运行时
+所有运行时都实现同一个 `SandboxService` 接口，由配置（`runtime.type`）选择：Docker 用于本地和单机部署，Kubernetes 用于通过 controller 或 agent-sandbox 承载容器工作负载，Fast Sandbox 用于基于模板的 microVM。在 Kubernetes 下，`CompositeSandboxService` 将容器工作负载 provider 与 `FastSandboxService` 组合起来——携带 `templateId` 的创建请求或 `fsb-` 前缀 ID 会路由到 Fast Sandbox，其余路由到容器 provider。API、响应模型和 SDK 在三者之间完全一致。
+
+#### 异步生命周期与绝对过期时间
+<u>创建会在沙箱真正运行之前返回（`Pending`），客户端轮询状态或使用 SDK 就绪辅助方法。这使 API 对慢运行时保持非阻塞——准备一个 pod 或 microVM 绝不能让 HTTP 请求一直挂着。</u>过期时间是绝对 TTL，而不是空闲超时：server 或运行时重启不会重置它，因此沙箱的生命周期仅从创建时间就能审计。
+
+沙箱被观察到为 `Pending` 或 `Running`，经过 `Pausing` / `Paused` / `Resuming` / `Stopping` 转换，最终进入 `Terminated`（退出码 0）或 `Failed`（非零）。`resume()` 刻意是暂停态操作，绝不是通用重启：已经退出的工作负载是 `Terminated` 或 `Failed`，对此诚实的回答是创建替代沙箱，而不是静默复活。在 Kubernetes 上 pause 会保留沙箱 ID 并恢复 root filesystem——选择启用 QEMU 模式时甚至恢复 guest 内存。。
+
+对于 Docker 沙箱，创建响应中的 `createdAt` 会保存在容器 label `opensandbox.io/created-at` 中，并被后续读取复用。没有该 label 的旧容器使用 Docker 的创建时间。由 server 管理的 pause/resume 转换会将主容器的状态和时间戳记录在 `~/.opensandbox/metadata/_transition/` 下；只要该 metadata 目录保留，成功持久化的记录就能在 server 重启后存活。存储的时间戳仅在其状态与观察到的容器状态一致时才会使用。Docker 的 `FinishedAt` 仍然是容器终止的时间戳，包括 server 之外的终止。对于带 timeout 的沙箱，过期时间始终是原始请求时刻的时钟读数加上该 timeout；pause/resume 不会延长它。
+
+对于 Kubernetes BatchSandbox 工作负载，`DELETE /sandboxes/{id}` 返回 `204`，SDK 的 `kill()` 在删除被接受后即返回。请轮询 `GET /sandboxes/{id}`：清理完成前它报告 `Stopping`，随后返回 `404`。在正常的受管删除下，非池化沙箱以及使用默认 `Delete` 策略的 pool 会等待 pod 消失；pool 的 `Noop` 策略会保留进程，因此其 `404` 并不能确认运行时已终止。
+
+#### 端点解析是契约的一部分
+
+客户端从不猜测如何访问沙箱服务。`GET /sandboxes/{id}/endpoints/{port}` 会返回两种形式之一的可达地址，具体取决于运行时和部署拓扑：直接地址（Docker host 映射或 pod IP），或 ingress gateway 路由。
+
+#### 限定范围的持久化，限定范围的 HA
+
+server 管理的记录——快照元数据和模板目录——默认持久化到 SQLite，显式配置后使用 PostgreSQL。默认部署是**单 active**：一个副本，升级期间有短暂 API 中断，使用 SQLite。

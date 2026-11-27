@@ -4,7 +4,6 @@ slug: agent-sandbox-introduction
 description: 介绍 Sandbox CRD 如何为 AI 智能体提供稳定身份、持久存储与暂停恢复等生命周期能力。
 category: agent-sandbox
 order: 10
-lang: zh
 draft: false
 ---
 ## agent-sandbox介绍

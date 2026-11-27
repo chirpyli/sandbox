@@ -4,7 +4,6 @@ slug: agent-sandbox-production
 description: agent-sandbox完全基于k8s进行设计，为Kubernetes定义了Sandbox CRD及控制器。为k8s提供了基础的沙箱能力。属于沙箱编排层，沙箱运行时通过RuntimeClass进行配置，可采用Kata,gVisor。
 category: agent-sandbox
 order: 40
-lang: zh
 draft: false
 ---
 

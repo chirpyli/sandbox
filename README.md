@@ -34,7 +34,6 @@ python3 tools/build_site.py --write-meta
 | `description` | 首页卡片摘要 | 首个正文段落 |
 | `category` | 所属专题 | 一级目录名 |
 | `order` | 同专题内的排序，越小越靠前 | `100` |
-| `lang` | 语言标记 | `zh` |
 | `tags` | 标签列表 | 空 |
 | `draft` | `true` 时不生成页面 | `false` |
 
@@ -47,7 +46,6 @@ slug: agent-sandbox-core-design
 description: "沙箱抽象、调度、访问与隔离机制"
 category: agent-sandbox
 order: 10
-lang: zh
 tags: [kubernetes, sandbox]
 draft: false
 ---

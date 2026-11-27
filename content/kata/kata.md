@@ -4,16 +4,14 @@ slug: kata
 description: 介绍 Kata Containers 如何用轻量虚拟机提供容器体验与虚拟机级隔离。
 category: kata
 order: 100
-lang: zh
 draft: false
 ---
 
 ## Kata介绍
 
-Kata Containers致力于构建一种安全的**容器运行时**。
+[Kata Containers](https://katacontainers.io/)致力于构建一种安全的**容器运行时**。
 
-> 官网： https://katacontainers.io/
-> 文档：https://kata-containers.github.io/kata-containers/
+> 文档：https://kata-containers.github.io/kata-containers/          
 > github: https://github.com/kata-containers/kata-containers
 
 Kata解决的问题：容器共享内核的方案存在安全风险，容器的提权漏洞将会导致整个系统被侵入。

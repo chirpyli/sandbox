@@ -4,7 +4,6 @@ slug: agent-sandbox-install
 description: agent-sandbox 让隔离的、有状态的、单实例工作负载的管理变得简单，非常适用于 AI Agent 运行时、强化学习等场景。
 category: agent-sandbox
 order: 20
-lang: zh
 draft: false
 ---
 

@@ -228,7 +228,6 @@ class Document:
     category: str
     category_label: str
     order: int
-    lang: str
     tags: list[str]
     meta: dict
     raw_body: str
@@ -339,7 +338,6 @@ def load_documents() -> list[Document]:
                     category, category.replace("-", " ").title()
                 ),
                 order=order,
-                lang=str(meta.get("lang") or "zh"),
                 tags=[str(tag) for tag in tags],
                 meta=meta,
                 raw_body=raw_body,
@@ -372,13 +370,12 @@ def write_frontmatter(documents: list[Document]) -> None:
             "description": doc.description,
             "category": doc.category,
             "order": doc.order,
-            "lang": doc.lang,
             "draft": bool(doc.meta.get("draft", False)),
         }
         if doc.tags:
             data["tags"] = doc.tags
         for key, value in doc.meta.items():
-            if key not in data:
+            if key not in data and key != "lang":
                 data[key] = value
         frontmatter = yaml.safe_dump(
             data,
@@ -492,7 +489,6 @@ def render_articles(
             "TITLE": html.escape(doc.title),
             "DESCRIPTION": html.escape(doc.description),
             "CATEGORY": html.escape(doc.category_label),
-            "LANG": html.escape(doc.lang.upper()),
             "TAGS": tags,
             "TOC": toc,
             "BODY": body_html,
@@ -523,7 +519,7 @@ def render_home(documents: list[Document], template: str) -> None:
                 '<article class="article-card">\n'
                 f'          <a class="card-link" href="articles/{doc.slug}/">{html.escape(doc.title)}</a>\n'
                 f'          <p class="card-desc">{html.escape(doc.description)}</p>\n'
-                f'          <div class="card-meta"><span>{html.escape(doc.lang.upper())}</span><code>{html.escape(doc.slug)}</code></div>\n'
+                f'          <div class="card-meta"><code>{html.escape(doc.slug)}</code></div>\n'
                 "        </article>"
             )
         label = html.escape(grouped[category][0].category_label)
