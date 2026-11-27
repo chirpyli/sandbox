@@ -83,6 +83,9 @@ MERMAID_PLACEHOLDER_RE = re.compile(
     r'<div class="mermaid-source" data-index="(\d+)"></div>'
 )
 PLACEHOLDER_RE = re.compile(r"%%([A-Z_]+)%%")
+TABLE_DELIMITER_RE = re.compile(
+    r"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$"
+)
 
 
 def slugify_heading(value: str, separator: str) -> str:
@@ -109,6 +112,50 @@ class ListSpacingPreprocessor(Preprocessor):
             if needs_gap:
                 result.append("")
             result.append(line)
+        return result
+
+
+class TableSpacingPreprocessor(Preprocessor):
+    """给紧贴正文的表格补空行。
+
+    Python-Markdown 的 tables 扩展要求表格独占一个块：前面没有空行时表格会被
+    当成段落文本，后面没有空行时后续段落会被当成最后一行表格数据。
+    """
+
+    def run(self, lines: list[str]) -> list[str]:
+        result: list[str] = []
+        in_fence = False
+        index = 0
+        total = len(lines)
+        while index < total:
+            line = lines[index]
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                result.append(line)
+                index += 1
+                continue
+
+            is_table_start = (
+                not in_fence
+                and "|" in line
+                and index + 1 < total
+                and TABLE_DELIMITER_RE.match(lines[index + 1])
+            )
+            if not is_table_start:
+                result.append(line)
+                index += 1
+                continue
+
+            if result and result[-1].strip() and "|" not in result[-1]:
+                result.append("")
+            result.append(line)
+            result.append(lines[index + 1])
+            index += 2
+            while index < total and lines[index].strip() and "|" in lines[index]:
+                result.append(lines[index])
+                index += 1
+            if index < total and lines[index].strip():
+                result.append("")
         return result
 
 
@@ -216,6 +263,7 @@ def validate_code_languages(path: Path, text: str) -> None:
 class SandboxMarkdownExtension(Extension):
     def extendMarkdown(self, md) -> None:
         md.preprocessors.register(ListSpacingPreprocessor(md), "list-spacing", 90)
+        md.preprocessors.register(TableSpacingPreprocessor(md), "table-spacing", 89)
         md.inlinePatterns.register(MarkInlineProcessor(MARK_RE, md), "mark", 65)
 
 
