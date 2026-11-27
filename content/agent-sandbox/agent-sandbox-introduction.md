@@ -7,7 +7,6 @@ order: 10
 lang: zh
 draft: false
 ---
-
 ## agent-sandbox介绍
 
 > 负载不同，k8s当前的原语不能满足agent负载的需求
@@ -27,7 +26,6 @@ AI智能体通常是隔离的、有状态的、单例工作负载。 它们充�
 > Agent Sandbox是一个沙箱编排器（sandbox orchestrator）。它把底层的容器隔离委托给安全的“沙箱运行时”（如 gVisor 或 Kata Containers），方式是管理那些被配置为使用这些运行时的 Pod（通过 RuntimeClass）。
 
 > [gvisor](https://github.com/google/gvisor) :它是一个用户态内核（以 runsc 作为 OCI 运行时），在容器和宿主机内核之间加了一层隔离，提供比普通 runc 更强的沙箱边界
-
 
 ### 概述
 
@@ -145,36 +143,7 @@ service RuntimeService {
 }
 ```
 
-补充containerd与shim以及runc的时序图：
 
-```mermaid
-sequenceDiagram
-    participant C as containerd (daemon)
-    participant L as shim launcher<br/>(短命)
-    participant S as containerd-shim-runc-v2<br/>(常驻)
-    participant R as runc (短命)
-    participant I as runc init → 容器 PID 1
-
-    C->>C: 写 bundle: config.json (OCI spec)
-    C->>L: fork/exec `...shim-runc-v2 start -id -bundle -address -publish-binary`
-    L->>S: fork/exec + setsid 脱离会话 (daemonize)
-    L-->>C: stdout 输出 shim 的 ttrpc socket 地址
-    L->>L: 退出
-    C->>S: ttrpc 连接 + TaskService.Create
-    S->>S: prctl(PR_SET_CHILD_SUBREAPER, 1)
-    S->>R: fork/exec `runc create --bundle ... --pid-file init.pid <id>`
-    R->>I: 再 fork/exec `/proc/self/exe init` (nsexec 自举)
-    I->>I: clone/unshare namespaces, cgroups, mounts, seccomp
-    I->>I: 阻塞读 exec.fifo，等 start 信号
-    R-->>S: 写 init.pid (host PID)，runc 退出
-    Note over S,I: runc 已死，孤儿 init 被 subreaper(shim) 收养
-    C->>S: TaskService.Start
-    S->>R: fork/exec `runc start <id>`（写 exec.fifo）
-    R-->>S: 退出
-    I->>I: execve 用户进程（/pause、bash…）
-    S-->>C: 事件 TaskStart / 后续 TaskExit（publish-binary）
-
-```
 
 RuntimeClass kata-dragonball 的完整调用链
 
@@ -196,6 +165,4 @@ Dragonball VMM (dbs) 启动 microVM
         │
         ▼
 guest 内 kata-agent → rustjail 创建容器进程
-
 ```
-

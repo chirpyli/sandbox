@@ -224,3 +224,6 @@ __marimo__/
 
 # Generated GitHub Pages site (built from content/ and templates/)
 /docs/
+
+dbnotes
+todo.md

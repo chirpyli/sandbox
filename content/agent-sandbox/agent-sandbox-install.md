@@ -14,10 +14,9 @@ draft: false
 
 为 Kubernetes 开发一个 Sandbox 自定义资源定义（CRD）及其控制器。其目标是提供一套声明式的、标准化的 API，用于管理那些需要具备“长时间运行、有状态、单实例容器、稳定身份”等特征的工作负载——就像基于 Kubernetes 原语构建的轻量级单容器虚拟机体验。
 
-Agent Sandbox是一个沙箱编排器（sandbox orchestrator）。它把底层的容器隔离委托给安全的“沙箱运行时”（如 gVisor 或 Kata Containers），方式是管理那些被配置为使用这些运行时的 Pod（通过 RuntimeClass）。
+[Agent Sandbox](https://agent-sandbox.sigs.k8s.io/)是一个沙箱编排器（sandbox orchestrator）。它把底层的容器隔离委托给安全的“沙箱运行时”（如 gVisor 或 Kata Containers），方式是管理那些被配置为使用这些运行时的 Pod（通过 RuntimeClass）。
 
-github: https://github.com/kubernetes-sigs/agent-sandbox.git
-官网：https://agent-sandbox.sigs.k8s.io/
+>github: https://github.com/kubernetes-sigs/agent-sandbox.git    
 
 [gvisor](https://github.com/google/gvisor) :它是一个用户态内核（以 runsc 作为 OCI 运行时），在容器和宿主机内核之间加了一层隔离，提供比普通 runc 更强的沙箱边界
 
