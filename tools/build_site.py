@@ -12,6 +12,7 @@ import argparse
 import html
 import re
 import shutil
+import xml.etree.ElementTree as etree
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +21,24 @@ from typing import Optional
 import markdown
 import yaml
 from markdown.extensions import Extension
+from markdown.inlinepatterns import InlineProcessor
 from markdown.preprocessors import Preprocessor
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+from pygments.style import Style
+from pygments.token import (
+    Comment,
+    Error,
+    Generic,
+    Keyword,
+    Name,
+    Number,
+    Operator,
+    Punctuation,
+    String,
+    Whitespace,
+)
+from pygments.util import ClassNotFound
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTENT_DIR = ROOT / "content"
@@ -57,7 +75,13 @@ CATEGORY_ORDER = [
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HEADING_RE = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", re.M)
 LINK_RE = re.compile(r"(\]\()([^)\s]+)(\))")
-MERMAID_RE = re.compile(r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S)
+MARK_RE = r"(?<!\w)==(?!\s)(.+?)(?<!\s)==(?!\w)"
+MERMAID_FENCE_RE = re.compile(
+    r"^[ \t]*```mermaid[ \t]*\r?\n(.*?)^[ \t]*```[ \t]*$", re.M | re.S
+)
+MERMAID_PLACEHOLDER_RE = re.compile(
+    r'<div class="mermaid-source" data-index="(\d+)"></div>'
+)
 PLACEHOLDER_RE = re.compile(r"%%([A-Z_]+)%%")
 
 
@@ -88,9 +112,111 @@ class ListSpacingPreprocessor(Preprocessor):
         return result
 
 
+class MarkInlineProcessor(InlineProcessor):
+    """把 ==高亮== 转换为 <mark>高亮</mark>。
+
+    行内代码与代码块中的 == 不会被解析，因为代码块在块级阶段处理，
+    行内代码则由优先级更高的 code 处理器先匹配。
+    """
+
+    def handleMatch(self, match, data):
+        element = etree.Element("mark")
+        element.text = match.group(1)
+        return element, match.start(0), match.end(0)
+
+
+class GitHubLightStyle(Style):
+    """对齐 GitHub 浅色主题的语法配色。"""
+
+    name = "github-light"
+    background_color = "#f6f8fa"
+    default_style = "#1f2328"
+
+    styles = {
+        Whitespace: "#1f2328",
+        Comment: "#6e7781",
+        Comment.Preproc: "#cf222e",
+        Keyword: "#cf222e",
+        Keyword.Constant: "#cf222e",
+        Keyword.Namespace: "#cf222e",
+        Keyword.Type: "#cf222e",
+        Operator: "#cf222e",
+        Operator.Word: "#cf222e",
+        Punctuation: "#1f2328",
+        Name: "#1f2328",
+        Name.Attribute: "#0550ae",
+        Name.Builtin: "#953800",
+        Name.Class: "#8250df",
+        Name.Constant: "#0550ae",
+        Name.Decorator: "#8250df",
+        Name.Function: "#8250df",
+        Name.Label: "#0550ae",
+        Name.Tag: "#116329",
+        Name.Variable: "#953800",
+        String: "#0a3069",
+        String.Doc: "#6e7781",
+        String.Escape: "#cf222e",
+        String.Interpol: "#cf222e",
+        String.Regexp: "#116329",
+        Number: "#0550ae",
+        Generic.Heading: "#0550ae bold",
+        Generic.Subheading: "#0550ae bold",
+        Generic.Deleted: "#82071e bg:#ffebe9",
+        Generic.Inserted: "#116329 bg:#dafbe1",
+        Generic.Emph: "italic",
+        Generic.Strong: "bold",
+        Generic.Prompt: "#6e7781",
+        Error: "#cf222e",
+    }
+
+
+class SiteHtmlFormatter(HtmlFormatter):
+    """在 Pygments 容器上保留代码块的语言 class。"""
+
+    def __init__(self, **options) -> None:
+        lang = str(options.pop("lang_str", "") or "").strip()
+        cssclass = str(options.get("cssclass") or "highlight")
+        if lang and lang not in cssclass.split():
+            options["cssclass"] = f"{cssclass} {lang}"
+        super().__init__(**options)
+
+
+def iter_fence_languages(body: str):
+    """遍历围栏代码块声明的语言标识。"""
+    in_fence = False
+    for line in body.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("```"):
+            continue
+        if in_fence:
+            in_fence = False
+            continue
+        in_fence = True
+        info = stripped[3:].strip()
+        if not info:
+            continue
+        lang = info.split()[0].strip("{}")
+        if lang:
+            yield lang
+
+
+def validate_code_languages(path: Path, text: str) -> None:
+    """未知语言会静默退化为纯文本，这里显式报错以暴露拼写错误。"""
+    for lang in iter_fence_languages(text):
+        if lang == "mermaid":
+            continue
+        try:
+            get_lexer_by_name(lang)
+        except ClassNotFound:
+            raise ValueError(
+                f"{path}: 未知代码块语言 {lang!r}，请改用 Pygments 支持的语言标识"
+            ) from None
+
+
 class SandboxMarkdownExtension(Extension):
     def extendMarkdown(self, md) -> None:
         md.preprocessors.register(ListSpacingPreprocessor(md), "list-spacing", 90)
+        md.inlinePatterns.register(MarkInlineProcessor(MARK_RE, md), "mark", 65)
 
 
 @dataclass
@@ -162,6 +288,7 @@ def extract_description(body: str) -> str:
         paragraph.append(stripped)
     text = " ".join(paragraph)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"==([^=]+)==", r"\1", text)
     text = re.sub(r"[*`_]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:120] + ("…" if len(text) > 120 else "")
@@ -173,7 +300,9 @@ def load_documents() -> list[Document]:
         relative = path.relative_to(CONTENT_DIR)
         if "assets" in relative.parts:
             continue
-        meta, raw_body = split_frontmatter(path.read_text(encoding="utf-8"))
+        source_text = path.read_text(encoding="utf-8")
+        validate_code_languages(path, source_text)
+        meta, raw_body = split_frontmatter(source_text)
         if meta.get("draft"):
             continue
 
@@ -292,15 +421,38 @@ def rewrite_links(body: str, source: Path, slug_by_path: dict[Path, str]) -> str
 
 
 def render_markdown(body: str) -> tuple[str, str]:
+    mermaid_blocks: list[str] = []
+
+    def stash_mermaid(match: re.Match[str]) -> str:
+        mermaid_blocks.append(match.group(1).strip("\n"))
+        return (
+            '\n\n<div class="mermaid-source" '
+            f'data-index="{len(mermaid_blocks) - 1}"></div>\n\n'
+        )
+
+    prepared = MERMAID_FENCE_RE.sub(stash_mermaid, body)
     converter = markdown.Markdown(
-        extensions=["extra", "admonition", "toc", "sane_lists", SandboxMarkdownExtension()],
+        extensions=[
+            "extra",
+            "admonition",
+            "toc",
+            "sane_lists",
+            "codehilite",
+            SandboxMarkdownExtension(),
+        ],
         extension_configs={
             "toc": {"toc_depth": "2-3", "slugify": slugify_heading},
+            "codehilite": {
+                "guess_lang": False,
+                "css_class": "highlight",
+                "pygments_formatter": SiteHtmlFormatter,
+            },
         },
     )
-    content = converter.convert(body)
-    content = MERMAID_RE.sub(
-        lambda match: f'<div class="mermaid">{html.unescape(match.group(1))}</div>',
+    content = converter.convert(prepared)
+    content = MERMAID_PLACEHOLDER_RE.sub(
+        lambda match: '<div class="mermaid">'
+        f"{html.escape(mermaid_blocks[int(match.group(1))])}</div>",
         content,
     )
     return content, converter.toc
@@ -402,6 +554,16 @@ def render_home(documents: list[Document], template: str) -> None:
     )
 
 
+def write_stylesheets() -> None:
+    shutil.copy2(TEMPLATE_DIR / "style.css", ASSET_DIR / "style.css")
+    shutil.copy2(TEMPLATE_DIR / "favicon.svg", ASSET_DIR / "favicon.svg")
+    formatter = HtmlFormatter(style=GitHubLightStyle, cssclass="highlight")
+    highlight_css = formatter.get_style_defs(".highlight")
+    (ASSET_DIR / "highlight.css").write_text(
+        f"{highlight_css}\n", encoding="utf-8"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="生成 AI 智能体沙箱静态站点")
     parser.add_argument(
@@ -420,8 +582,7 @@ def main() -> None:
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
     ARTICLE_DIR.mkdir(parents=True, exist_ok=True)
 
-    shutil.copy2(TEMPLATE_DIR / "style.css", ASSET_DIR / "style.css")
-    shutil.copy2(TEMPLATE_DIR / "favicon.svg", ASSET_DIR / "favicon.svg")
+    write_stylesheets()
     asset_source = CONTENT_DIR / "assets"
     if asset_source.is_dir():
         shutil.copytree(asset_source, CONTENT_ASSET_DIR, dirs_exist_ok=True)

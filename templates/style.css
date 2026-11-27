@@ -374,22 +374,24 @@ h1 {
 .article-body blockquote p:last-child { margin-bottom: 0; }
 
 .article-body code {
-  padding: 0.12em 0.36em;
-  border-radius: 4px;
-  background: #edf0f5;
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  background: rgba(175, 184, 193, 0.2);
   font-family: var(--mono);
-  font-size: 0.88em;
+  font-size: 85%;
 }
 
 .article-body pre {
   margin: 1.5em 0;
-  padding: 16px 18px;
+  padding: 16px;
   overflow-x: auto;
-  border-radius: 8px;
-  background: #151b2b;
-  color: #e8ecf5;
-  font-size: 0.86rem;
-  line-height: 1.6;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #1f2328;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  tab-size: 4;
 }
 
 .article-body pre code {
@@ -397,6 +399,21 @@ h1 {
   background: transparent;
   color: inherit;
   font-size: inherit;
+}
+
+.article-body .highlight {
+  margin: 1.5em 0;
+  overflow: hidden;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+.article-body .highlight pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .article-body img {
@@ -433,9 +450,9 @@ h1 {
 }
 
 .article-body mark {
-  padding: 0.05em 0.22em;
-  border-radius: 3px;
-  background: #fff2a8;
+  padding: 0 0.2em;
+  border-radius: 6px;
+  background: #fff8c5;
   color: inherit;
 }
 
