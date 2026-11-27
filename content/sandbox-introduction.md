@@ -1,15 +1,23 @@
 ---
-title: 沙箱介绍
+title: Agent 沙箱技术概览
 slug: sandbox-introduction
-description: 对比 agent-sandbox、CubeSandbox 与 Substrate 等设计路线，整理主流开源沙箱运行时。
+description: 从应用场景、隔离技术到编排与部署，梳理AI Agent沙箱的核心概念、主流开源方案。
 category: overview
 order: 100
 draft: false
 ---
 
-# 沙箱介绍
+# Agent 沙箱技术全景
 
 沙箱Sandbox本质是一个隔离的环境（可以是容器、VM或隔离运行时等）。AI智能体可以在沙箱中执行不信任的代码等。
+
+## 为什么需要沙箱？
+
+Agent正从"生成文本"走向"执行动作"：运行模型写的代码、安装依赖、读写文件、访问网络。这些动作默认不可信——模型会被提示注入、会写错，也可能被诱导执行破坏性操作。
+
+沙箱的本质，是把不可信代码的执行风险收敛到一个可控安全隔离的环境里：
+- **隔离**：崩溃、提权、逃逸尝试都被限制在沙箱内，不波及宿主机和其他租户。
+- **可控**：资源限制有上限，网络策略管控，出站网络按白名单放行，凭证不进入沙箱。
 
 ## 应用场景
 
@@ -48,7 +56,7 @@ draft: false
 
 ## 编排与部署
 
-当前Agent沙箱按“是否必须有k8s”大致分三类：
+当前Agent沙箱按“是否依赖k8s”大致分三类：
 - 完全依赖k8s（K8s原生，单沙箱≈单Pod）：agent-sandbox
 - 不依赖k8s（自带控制面，可直接部署到单机/VM）：CubeSandbox
 - 依赖k8s但不把沙箱热路径交给k8s（自有调度 + 预热worker/Fastlet）：Substrate、Fast Sandbox
@@ -72,6 +80,3 @@ draft: false
 | [Substrate](https://github.com/agent-substrate/substrate) | Google（已捐赠 CNCF） | gVisor 应用内核或 Cloud Hypervisor 微虚拟机，默认拒绝出站 | Apache-2.0 | Kubernetes 原生控制面；空闲 actor 快照挂起后亚秒级恢复，密度约为标准容器的 10 倍 |
 | [E2B runtime](https://github.com/e2b-dev/E2B) | E2B | Firecracker 微虚拟机 | Apache-2.0 | 可自托管 E2B 技术栈；支持 BYOC/本地部署 |
 
-
-参考资料：
-- [awesome-ai-sandboxes](https://github.com/awesome-llms-labs/awesome-ai-sandboxes.git)
