@@ -143,7 +143,7 @@ Agent Substrate 使用这种双层模型来同时优化可靠性和性能：
 
 ```mermaid
 classDiagram
-    namespace kube-apiserver {
+    namespace kube_apiserver {
         class WorkerPool {
             <<CRD>>
         }
@@ -156,26 +156,26 @@ classDiagram
         }
     }
 
-    namespace ate-api-server {
+    namespace ate_api_server {
         class ActorTemplate {
             <<record>>
         }
         class Actor {
             <<record>>
-            status.state
-            status.snapshots
+            +status.state
+            +status.snapshots
         }
         class Worker {
             <<record>>
-            status.state
-            status.ips
+            +status.state
+            +status.ips
         }
         class ActorAssignment {
             <<subresource>>
         }
     }
 
-    ActorTemplate ..> WorkerPool : worker_selector（标签）
+    ActorTemplate ..> WorkerPool : worker_selector
     WorkerPool ..> SandboxConfig : sandboxClasses
     WorkerPool ..> Deployment : 由 atecontroller 协调
     Deployment "1" *-- "*" WorkerPod : 管理
